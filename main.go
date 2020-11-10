@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ahui2016/go-send/pass"
 	"github.com/ahui2016/goutil"
@@ -31,27 +32,29 @@ var (
 	cookiePath = filepath.Join(dataDir, cookieFileName)
 )
 
-type Message struct {
+type Result struct {
 	Message string
 }
 
 func main() {
 	flag.Parse()
 
+	if goutil.PathIsNotExist(cookiePath) {
+		_ = login()
+	}
+	cookie := readCookie()
+
+	// 无 -text 参数
 	if *text == "" {
-		if goutil.PathIsNotExist(cookiePath) {
-			_ = login()
-		}
-		cookie := readCookie()
-		textMsg, isLoggedIn := getLastText(cookie)
+		textMsg, ok := getLastText(cookie)
 
 		// 如果登录失败，很可能是 cookie 过期，重新登录一次。
-		if !isLoggedIn {
+		if !ok {
 			cookie = login()
-			textMsg, isLoggedIn = getLastText(cookie)
+			textMsg, ok = getLastText(cookie)
 
 			// 重新登录应该成功才对，如果还是失败，原因就要慢慢找了。
-			if !isLoggedIn {
+			if !ok {
 				log.Fatal("无法登录，未知错误")
 			}
 		}
@@ -60,8 +63,14 @@ func main() {
 		return
 	}
 
-	// _, err := db.InsertTextMsg(*text)
-	// goutil.CheckErrorFatal(err)
+	// 有 -text 参数
+	ok := insertTextMsg(cookie, *text)
+	if !ok {
+		cookie = login()
+		if ok := insertTextMsg(cookie, *text); !ok {
+			log.Fatal("无法登录，未知错误")
+		}
+	}
 }
 
 func login() (cookie *http.Cookie) {
@@ -78,33 +87,50 @@ func login() (cookie *http.Cookie) {
 	return nil
 }
 
-func getLastText(cookie *http.Cookie) (textMsg string, isLoggedIn bool) {
-	req, err := http.NewRequest(
-		http.MethodGet, website+"/api/last-text", nil)
+func getLastText(cookie *http.Cookie) (textMsg string, ok bool) {
+	req := requestGet(website+"/api/last-text", cookie)
+	body, ok := httpClientDo(req)
+	if !ok {
+		return
+	}
+	var result Result
+	err := json.Unmarshal(body, &result)
 	goutil.CheckErrorFatal(err)
+	return result.Message, true
+}
 
-	req.AddCookie(cookie)
+func insertTextMsg(cookie *http.Cookie, textMsg string) (ok bool) {
+	data := url.Values{}
+	data.Set("text-msg", textMsg)
+	req := requestPost(website+"/api/add-text-msg", data, cookie)
+	_, ok = httpClientDo(req)
+	return
+}
+
+func httpClientDo(req *http.Request) (body []byte, isLoggedIn bool) {
 	res, err := http.DefaultClient.Do(req)
 	goutil.CheckErrorFatal(err)
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	goutil.CheckErrorFatal(err)
 
-	var m Message
-	if err := json.Unmarshal(body, &m); err != nil {
-		log.Fatal(string(body))
-	}
-
 	if res.StatusCode != 200 {
-		if goutil.NoCaseContains(m.Message, "require login") {
-			return
+		var result Result
+		err := json.Unmarshal(body, &result)
+
+		// 如果 result 里有 Message, 并且 Message 的内容是要求登录
+		if err == nil &&
+			goutil.NoCaseContains(result.Message, "require login") {
+			return nil, false
 		}
+
+		// 如果 result 里没有 Message 或者发生其他错误
 		log.Fatal(res.StatusCode, string(body))
 	}
 
 	// res.StatusCode == 200
-	return m.Message, true
+	return body, true
 }
 
 func saveCookie(cookie *http.Cookie) {
@@ -124,4 +150,24 @@ func readCookie() *http.Cookie {
 	var cookie http.Cookie
 	goutil.CheckErrorFatal(json.Unmarshal(blob, &cookie))
 	return &cookie
+}
+
+// RequestPost makes a request with a cookie, posts data as "application/x-www-form-urlencoded".
+// usage: http.DefaultClient.Do(req)
+func requestPost(reqURL string, data url.Values, cookie *http.Cookie) *http.Request {
+	body := strings.NewReader(data.Encode())
+	req, err := http.NewRequest(http.MethodPost, reqURL, body)
+	goutil.CheckErrorFatal(err)
+	req.AddCookie(cookie)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
+}
+
+// RequestGet makes a request with a cookie.
+// usage: http.DefaultClient.Do(req)
+func requestGet(reqURL string, cookie *http.Cookie) *http.Request {
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	goutil.CheckErrorFatal(err)
+	req.AddCookie(cookie)
+	return req
 }
