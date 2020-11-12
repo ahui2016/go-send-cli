@@ -10,33 +10,39 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/ahui2016/goutil"
 	"github.com/ahui2016/goutil/session"
 )
 
 const (
-	website          = "http://127.0.0.1"
-	dataFolderName   = "gosend_data_folder"
-	cookieFileName   = "gosend.cookie"
-	passwordFileName = "password"
+	dataFolderName       = "gosend_data_folder"
+	cookieFileName       = "gosend.cookie"
+	configFileName       = "config-cli"
+	gosendConfigFileName = "config"
 )
 
 var (
-	localPassword string
+	config Config
 )
 
 var (
 	text = flag.String("text", "", "insert a text message")
 	pass = flag.String("pass", "", "set password, cannot use empty password")
+	addr = flag.String("addr", "", "set the website address of go-send")
 )
 
 var (
-	dataDir      = filepath.Join(goutil.UserHomeDir(), dataFolderName)
-	cookiePath   = filepath.Join(dataDir, cookieFileName)
-	passwordPath = filepath.Join(dataDir, passwordFileName)
+	dataDir          = filepath.Join(goutil.UserHomeDir(), dataFolderName)
+	configPath       = filepath.Join(dataDir, configFileName)
+	gosendConfigPath = filepath.Join(dataDir, gosendConfigFileName)
 )
+
+type Config struct {
+	Cookie   http.Cookie
+	Address  string
+	Password string
+}
 
 type Result struct {
 	Message string
@@ -45,41 +51,20 @@ type Result struct {
 func init() {
 	goutil.MustMkdir(dataDir)
 	flag.Parse()
-	setPassword()
-}
-
-func setPassword() {
-	// 如果未输入密码参数，则忽略。如果输入了密码，没设置密码。
-	if *pass != "" {
-		err := ioutil.WriteFile(passwordPath, []byte(*pass), 0600)
-		goutil.CheckErrorFatal(err)
-		log.Fatal("OK, password is set.")
-	}
-
-	// 尝试读取密码，如果设置过密码，此时应能读取，如果读取失败则提示用户设置密码。
-	pw, err := ioutil.ReadFile(passwordPath)
-	if err != nil || len(pw) == 0 {
-		log.Fatal("password is not set 请先设置密码")
-		return
-	}
-	localPassword = string(pw)
+	setPasswordAddr()
+	setConfig()
 }
 
 func main() {
+	cookies := []*http.Cookie{&config.Cookie}
 
-	if goutil.PathIsNotExist(cookiePath) {
-		_ = login()
-	}
-	cookie := readCookie()
-	cookies := []*http.Cookie{cookie}
-
-	// 未输入 -text 参数
+	// 如果未输入 -text 参数，就直接获取第一条文本备忘。
 	if *text == "" {
 		textMsg, ok := getLastText(cookies)
 
-		// 如果登录失败，很可能是 cookie 过期，重新登录一次。
+		// 如果获取失败，很可能是 cookie 过期，重新登录一次。
 		if !ok {
-			cookie = login()
+			cookies = login()
 			textMsg, ok = getLastText(cookies)
 
 			// 重新登录应该成功才对，如果还是失败，原因就要慢慢找了。
@@ -92,20 +77,92 @@ func main() {
 		return
 	}
 
-	// 有 -text 参数
-	ok := insertTextMsg(cookies, *text)
+	// 有 -text 参数，就发送文本备忘。
+	ok := sendTextMsg(cookies, *text)
 	if !ok {
-		cookie = login()
-		if ok := insertTextMsg(cookies, *text); !ok {
+		cookies = login()
+		if ok := sendTextMsg(cookies, *text); !ok {
 			log.Fatal("无法登录，未知错误")
 		}
 	}
 }
 
-func login() (cookie *http.Cookie) {
+func setPasswordAddr() {
+	cfg := readConfig()
+
+	// 如果未输入密码或网址，则忽略。如果输入了密码或网址，则进行设置。
+	if *pass != "" {
+		cfg.Password = *pass
+		log.Println("Password is set.")
+	}
+	if *addr != "" {
+		cfg.Address = *addr
+		log.Println("Address is set.")
+	}
+	if cfg.Address+cfg.Password != "" {
+		saveConfig(&cfg)
+	}
+	if *pass+*addr != "" {
+		os.Exit(0)
+	}
+}
+
+func setConfig() {
+	configJSON, err := ioutil.ReadFile(configPath)
+
+	// configPath 有内容，就直接使用 configPath 的内容。
+	if err == nil && len(configJSON) > 0 {
+		goutil.CheckErrorFatal(json.Unmarshal(configJSON, &config))
+	} else {
+		// configPath 没有文件或内容为空, 则尝试获取 gosendConfigPath 的内容
+		gosendConfigJSON, err := ioutil.ReadFile(gosendConfigPath)
+
+		// 如果 configPath 没有内容，而 gosendConfigPath 有内容，就以 gosendConfigPath 的内容为准。
+		if err == nil && len(gosendConfigJSON) > 0 {
+			goutil.CheckErrorFatal(json.Unmarshal(gosendConfigJSON, &config))
+			config.Address = "http://" + config.Address
+			saveConfig(nil)
+		}
+	}
+
+	// 检查密码和网址是否已经设置，如示设置则提示用户进行设置。
+	if config.Password+config.Address == "" {
+		log.Fatal("password and address is not set 请先设置密码和网址")
+	}
+	if config.Password == "" {
+		log.Fatal("password is not set 请先设置密码")
+	}
+	if config.Address == "" {
+		log.Fatal("address is not set 请先设置网址")
+	}
+}
+
+func readConfig() (cfg Config) {
+	configJSON, err := ioutil.ReadFile(configPath)
+	// 忽略 not found 错误。
+	if goutil.ErrorContains(err, "cannot find") {
+		return
+	}
+	goutil.CheckErrorFatal(err)
+	goutil.CheckErrorFatal(json.Unmarshal(configJSON, &cfg))
+	return
+}
+
+func saveConfig(cfg *Config) {
+	if cfg != nil {
+		config = *cfg
+	}
+	configJSON, err := json.MarshalIndent(config, "", "    ")
+	goutil.CheckErrorFatal(err)
+	goutil.CheckErrorFatal(
+		ioutil.WriteFile(configPath, configJSON, 0600))
+	return
+}
+
+func login() []*http.Cookie {
 	v := url.Values{}
-	v.Set("password", localPassword)
-	res, err := http.PostForm(website+"/api/login", v)
+	v.Set("password", config.Password)
+	res, err := http.PostForm(config.Address+"/api/login", v)
 	goutil.CheckErrorFatal(err)
 
 	// getResultMessage 里面会检查错误，比如密码错误。
@@ -114,22 +171,22 @@ func login() (cookie *http.Cookie) {
 	for _, cookie := range res.Cookies() {
 		if cookie.Name == session.SessionID {
 			saveCookie(cookie)
-			return cookie
+			return []*http.Cookie{cookie}
 		}
 	}
 	return nil
 }
 
 func getLastText(cookies []*http.Cookie) (textMsg string, ok bool) {
-	res, err := goutil.HttpGet(website+"/api/last-text", cookies)
+	res, err := goutil.HttpGet(config.Address+"/api/last-text", cookies)
 	goutil.CheckErrorFatal(err)
 	return getResultMessage(res)
 }
 
-func insertTextMsg(cookies []*http.Cookie, textMsg string) (ok bool) {
+func sendTextMsg(cookies []*http.Cookie, textMsg string) (ok bool) {
 	data := url.Values{}
 	data.Set("text-msg", textMsg)
-	res, err := goutil.HttpPostForm(website+"/api/add-text-msg", data, cookies)
+	res, err := goutil.HttpPostForm(config.Address+"/api/add-text-msg", data, cookies)
 	goutil.CheckErrorFatal(err)
 	_, ok = getResultMessage(res)
 	return
@@ -149,9 +206,9 @@ func getResultMessage(res *http.Response) (msg string, isLoggedIn bool) {
 		return "", false
 	}
 
-	// 如果 result 里没有 Message, 或者 Unmarshal 发生其他错误,
-	// 或者 status != 200 并且错误原因不是要求登录。
-	if err != nil && res.StatusCode != 200 {
+	// 如果 status != 200 并且错误原因不是要求登录
+	// 或者 result 里没有 Message, 或者 Unmarshal 发生其他错误,
+	if res.StatusCode != 200 || err != nil {
 		log.Fatal(res.StatusCode, string(body))
 	}
 
@@ -160,40 +217,9 @@ func getResultMessage(res *http.Response) (msg string, isLoggedIn bool) {
 }
 
 func saveCookie(cookie *http.Cookie) {
-	ck := http.Cookie{
+	config.Cookie = http.Cookie{
 		Name:  cookie.Name,
 		Value: cookie.Value,
 	}
-	blob, err := json.Marshal(ck)
-	goutil.CheckErrorFatal(err)
-	goutil.CheckErrorFatal(ioutil.WriteFile(cookiePath, blob, 0600))
-}
-
-func readCookie() *http.Cookie {
-	blob, err := ioutil.ReadFile(cookiePath)
-	goutil.CheckErrorFatal(err)
-
-	var cookie http.Cookie
-	goutil.CheckErrorFatal(json.Unmarshal(blob, &cookie))
-	return &cookie
-}
-
-// RequestPost makes a request with a cookie, posts data as "application/x-www-form-urlencoded".
-// usage: http.DefaultClient.Do(req)
-func requestPost(reqURL string, data url.Values, cookie *http.Cookie) *http.Request {
-	body := strings.NewReader(data.Encode())
-	req, err := http.NewRequest(http.MethodPost, reqURL, body)
-	goutil.CheckErrorFatal(err)
-	req.AddCookie(cookie)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return req
-}
-
-// RequestGet makes a request with a cookie.
-// usage: http.DefaultClient.Do(req)
-func requestGet(reqURL string, cookie *http.Cookie) *http.Request {
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
-	goutil.CheckErrorFatal(err)
-	req.AddCookie(cookie)
-	return req
+	saveConfig(nil)
 }
