@@ -99,10 +99,8 @@ func setPasswordAddr() {
 		cfg.Address = *addr
 		log.Println("Address is set.")
 	}
-	if cfg.Address+cfg.Password != "" {
-		saveConfig(&cfg)
-	}
 	if *pass+*addr != "" {
+		saveConfig(&cfg)
 		os.Exit(0)
 	}
 }
@@ -165,8 +163,10 @@ func login() []*http.Cookie {
 	res, err := http.PostForm(config.Address+"/api/login", v)
 	goutil.CheckErrorFatal(err)
 
-	// getResultMessage 里面会检查错误，比如密码错误。
-	_, _ = getResultMessage(res)
+	body := getResponseBody(res)
+	if res.StatusCode != 200 {
+		log.Fatal(res.StatusCode, string(body))
+	}
 
 	for _, cookie := range res.Cookies() {
 		if cookie.Name == session.SessionID {
@@ -188,32 +188,39 @@ func sendTextMsg(cookies []*http.Cookie, textMsg string) (ok bool) {
 	data.Set("text-msg", textMsg)
 	res, err := goutil.HttpPostForm(config.Address+"/api/add-text-msg", data, cookies)
 	goutil.CheckErrorFatal(err)
-	_, ok = getResultMessage(res)
-	return
+	body := getResponseBody(res)
+	if res.StatusCode != 200 {
+		log.Fatal(res.StatusCode, string(body))
+	}
+	return true
 }
 
-func getResultMessage(res *http.Response) (msg string, isLoggedIn bool) {
+func getResponseBody(res *http.Response) []byte {
 	body, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	goutil.CheckErrorFatal(err)
+	return body
+}
 
+func getResultMessage(res *http.Response) (msg string, isLoggedIn bool) {
 	var result Result
-	err = json.Unmarshal(body, &result)
+	body := getResponseBody(res)
+	err := json.Unmarshal(body, &result)
 
-	// 如果 result 里有 Message, 并且 Message 的内容是要求登录
+	// 成功获取了最新的文本备忘
+	if err == nil && res.StatusCode == 200 {
+		return result.Message, true
+	}
+
+	// 如果 Message 的内容是要求登录
 	if err == nil &&
 		goutil.NoCaseContains(result.Message, "require login") {
 		return "", false
 	}
 
-	// 如果 status != 200 并且错误原因不是要求登录
-	// 或者 result 里没有 Message, 或者 Unmarshal 发生其他错误,
-	if res.StatusCode != 200 || err != nil {
-		log.Fatal(res.StatusCode, string(body))
-	}
-
-	// 至此，可以确定 result 里必然有 Message, 并且 status == 200
-	return result.Message, true
+	// 其他情况一律报错
+	log.Fatal(res.StatusCode, string(body))
+	return "", true
 }
 
 func saveCookie(cookie *http.Cookie) {
