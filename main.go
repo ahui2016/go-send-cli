@@ -17,7 +17,6 @@ import (
 
 const (
 	dataFolderName       = "gosend_data_folder"
-	cookieFileName       = "gosend.cookie"
 	configFileName       = "config-cli"
 	gosendConfigFileName = "config"
 )
@@ -51,8 +50,16 @@ type Result struct {
 func init() {
 	goutil.MustMkdir(dataDir)
 	flag.Parse()
+	checkFlagsCombination()
 	setPasswordAddr()
 	setConfig()
+}
+
+// checkFlagsCombination 检查命令参数的组合有无问题
+func checkFlagsCombination() {
+	if (*pass+*addr != "") && *text != "" {
+		log.Fatal("Cannot use -text with -pass or -addr 设置密码和网址的功能与收发消息功能不可同时使用")
+	}
 }
 
 func main() {
@@ -188,9 +195,12 @@ func sendTextMsg(cookies []*http.Cookie, textMsg string) (ok bool) {
 	data.Set("text-msg", textMsg)
 	res, err := goutil.HttpPostForm(config.Address+"/api/add-text-msg", data, cookies)
 	goutil.CheckErrorFatal(err)
-	body := getResponseBody(res)
+	body := string(getResponseBody(res))
 	if res.StatusCode != 200 {
-		log.Fatal(res.StatusCode, string(body))
+		if goutil.NoCaseContains(body, "require login") {
+			return false
+		}
+		log.Fatal(res.StatusCode, body)
 	}
 	return true
 }
