@@ -42,6 +42,12 @@ $ go install
 - 安装 go-send-cli, 安装方法如上所示
 - 执行以下命令
   ```
-  $ go-send-cli -pass abc -addr http://send.ai42.xyz
+  $ go-send-cli -pass abc -addr https://send.ai42.xyz
   ```
+  (注意网址开头要有 "https://", 结尾不要斜杠)
 - 然后就可以收发消息了，使用方法见上文。
+
+
+## TODO
+
+- 发送和接收文件
