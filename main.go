@@ -63,35 +63,17 @@ func checkFlagsCombination() {
 }
 
 func main() {
-	cookies := []*http.Cookie{&config.Cookie}
 
 	// 如果未输入 -text 参数，就直接获取第一条文本备忘。
 	if *text == "" {
-		textMsg, ok := getLastText(cookies)
-
-		// 如果获取失败，很可能是 cookie 过期，重新登录一次。
-		if !ok {
-			cookies = login()
-			textMsg, ok = getLastText(cookies)
-
-			// 重新登录应该成功才对，如果还是失败，原因就要慢慢找了。
-			if !ok {
-				log.Fatal("无法登录，未知错误")
-			}
-		}
+		textMsg := getLastText()
 		_, err := fmt.Fprint(os.Stdout, textMsg)
 		goutil.CheckErrorFatal(err)
 		return
 	}
 
 	// 有 -text 参数，就发送文本备忘。
-	ok := sendTextMsg(cookies, *text)
-	if !ok {
-		cookies = login()
-		if ok := sendTextMsg(cookies, *text); !ok {
-			log.Fatal("无法登录，未知错误")
-		}
-	}
+	sendTextMsg(*text)
 }
 
 func setPasswordAddr() {
@@ -184,53 +166,50 @@ func login() []*http.Cookie {
 	return nil
 }
 
-func getLastText(cookies []*http.Cookie) (textMsg string, ok bool) {
-	res, err := goutil.HttpGet(config.Address+"/api/last-text", cookies)
-	goutil.CheckErrorFatal(err)
-	return getResultMessage(res)
-}
-
-func sendTextMsg(cookies []*http.Cookie, textMsg string) (ok bool) {
+func getLastText() string {
 	data := url.Values{}
-	data.Set("text-msg", textMsg)
-	res, err := goutil.HttpPostForm(config.Address+"/api/add-text-msg", data, cookies)
+	data.Set("password", config.Password)
+
+	res, err := http.PostForm(config.Address+"/api/last-text", data)
 	goutil.CheckErrorFatal(err)
+
 	body := string(getResponseBody(res))
 	if res.StatusCode != 200 {
-		if goutil.NoCaseContains(body, "require login") {
-			return false
-		}
 		log.Fatal(res.StatusCode, body)
 	}
-	return true
+	return body
+}
+
+func sendTextMsg(textMsg string) {
+	data := url.Values{}
+	data.Set("password", config.Password)
+	data.Set("text-msg", textMsg)
+
+	res, err := http.PostForm(config.Address+"/api/add-text", data)
+	goutil.CheckErrorFatal(err)
+
+	body := getResponseBody(res)
+	if res.StatusCode != 200 {
+		log.Fatal(res.StatusCode, string(body))
+	}
 }
 
 func getResponseBody(res *http.Response) []byte {
 	body, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
+	_ = res.Body.Close()
 	goutil.CheckErrorFatal(err)
 	return body
 }
 
-func getResultMessage(res *http.Response) (msg string, isLoggedIn bool) {
+func getResultMessage(res *http.Response) string {
 	var result Result
 	body := getResponseBody(res)
 	err := json.Unmarshal(body, &result)
-
-	// 成功获取了最新的文本备忘
 	if err == nil && res.StatusCode == 200 {
-		return result.Message, true
+		return result.Message
 	}
-
-	// 如果 Message 的内容是要求登录
-	if err == nil &&
-		goutil.NoCaseContains(result.Message, "require login") {
-		return "", false
-	}
-
-	// 其他情况一律报错
 	log.Fatal(res.StatusCode, string(body))
-	return "", true
+	return ""
 }
 
 func saveCookie(cookie *http.Cookie) {
