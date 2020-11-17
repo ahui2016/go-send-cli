@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 
 	"github.com/ahui2016/goutil"
-	"github.com/ahui2016/goutil/session"
 )
 
 const (
@@ -38,13 +37,8 @@ var (
 )
 
 type Config struct {
-	Cookie   http.Cookie
 	Address  string
 	Password string
-}
-
-type Result struct {
-	Message string
 }
 
 func init() {
@@ -127,7 +121,8 @@ func setConfig() {
 func readConfig() (cfg Config) {
 	configJSON, err := ioutil.ReadFile(configPath)
 	// 忽略 not found 错误。
-	if goutil.ErrorContains(err, "cannot find") {
+	if goutil.ErrorContains(err, "cannot find") ||
+		goutil.ErrorContains(err, "no such file") {
 		return
 	}
 	goutil.CheckErrorFatal(err)
@@ -144,26 +139,6 @@ func saveConfig(cfg *Config) {
 	goutil.CheckErrorFatal(
 		ioutil.WriteFile(configPath, configJSON, 0600))
 	return
-}
-
-func login() []*http.Cookie {
-	v := url.Values{}
-	v.Set("password", config.Password)
-	res, err := http.PostForm(config.Address+"/api/login", v)
-	goutil.CheckErrorFatal(err)
-
-	body := getResponseBody(res)
-	if res.StatusCode != 200 {
-		log.Fatal(res.StatusCode, string(body))
-	}
-
-	for _, cookie := range res.Cookies() {
-		if cookie.Name == session.SessionID {
-			saveCookie(cookie)
-			return []*http.Cookie{cookie}
-		}
-	}
-	return nil
 }
 
 func getLastText() string {
@@ -199,23 +174,4 @@ func getResponseBody(res *http.Response) []byte {
 	_ = res.Body.Close()
 	goutil.CheckErrorFatal(err)
 	return body
-}
-
-func getResultMessage(res *http.Response) string {
-	var result Result
-	body := getResponseBody(res)
-	err := json.Unmarshal(body, &result)
-	if err == nil && res.StatusCode == 200 {
-		return result.Message
-	}
-	log.Fatal(res.StatusCode, string(body))
-	return ""
-}
-
-func saveCookie(cookie *http.Cookie) {
-	config.Cookie = http.Cookie{
-		Name:  cookie.Name,
-		Value: cookie.Value,
-	}
-	saveConfig(nil)
 }
