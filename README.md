@@ -16,6 +16,7 @@ $ go install
 
 - 执行命令 `go-send-cli` (在 Windows 里则是 go-send-cli.exe) 即可接收消息
 - 执行命令 `go-send-cli -text "abc def"` 即可发送内容为 abc def 的消息
+- 执行命令 `go-send-cli -file path/to/abc.jpg` 即可发送名为 abc.jpg 的文件
 
 
 ## 默认安装位置
@@ -50,4 +51,5 @@ $ go install
 
 ## TODO
 
-- 发送和接收文件
+- 接收文件
+- 发送剪贴板内容
