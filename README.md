@@ -11,7 +11,7 @@ $ cd go-send-cli
 $ go install
 ```
 
-- 建议在 `go install` 之前用 `more main.go` 查看程序代码，整个程序就只有这一个代码文件，很短，很直白，并且有注释，可大概了解这个程序的核心逻辑。
+- 建议在 `go install` 之前查看程序代码，整个程序只有一个代码文件 main.go, 很短，很直白，并且有注释，可大概了解这个程序的核心逻辑。
 
 
 ## 使用方法
@@ -19,6 +19,20 @@ $ go install
 - 执行命令 `go-send-cli` (在 Windows 里则是 go-send-cli.exe) 即可接收消息
 - 执行命令 `go-send-cli -text "abc def"` 即可发送内容为 abc def 的消息
 - 执行命令 `go-send-cli -file path/to/abc.jpg` 即可发送名为 abc.jpg 的文件
+
+
+## demo 演示
+
+由于我搭了一个 go-send 的演示站，因此你不需要自己搭建 go-send 即可体验 go-send-cli 的命令行操作。
+
+- 安装 go-send-cli, 安装方法如上所示
+- 执行以下命令
+  ```
+  $ go-send-cli -pass abc -addr https://send.ai42.xyz
+  ```
+  (注意网址开头要有 "https://", 结尾不要斜杠)
+- 然后就可以收发消息了，使用方法见上文。
+- 但要注意，演示版限制单个文件 512KB 以下，正式版可自由设定该限制值。
 
 
 ## 默认安装位置
@@ -36,20 +50,6 @@ $ go install
   ```
   $ go-send-cli -pass 密码 -addr 网址
   ```
-
-
-## demo 演示
-
-由于我搭了一个 go-send 的演示站，因此你不需要自己搭建 go-send 即可体验 go-send-cli 的命令行操作。
-
-- 安装 go-send-cli, 安装方法如上所示
-- 执行以下命令
-  ```
-  $ go-send-cli -pass abc -addr https://send.ai42.xyz
-  ```
-  (注意网址开头要有 "https://", 结尾不要斜杠)
-- 然后就可以收发消息了，使用方法见上文。
-- 但要注意，演示版限制单个文件 512KB 以下，正式版可自由设定该限制值。
 
 
 ## TODO
