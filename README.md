@@ -17,8 +17,10 @@ $ go install
 ## 使用方法
 
 - 执行命令 `go-send-cli` (在 Windows 里则是 go-send-cli.exe) 即可接收消息
-- 执行命令 `go-send-cli -text "abc def"` 即可发送内容为 abc def 的消息
-- 执行命令 `go-send-cli -file path/to/abc.jpg` 即可发送名为 abc.jpg 的文件
+- 执行命令 `go-send-cli -text "abc def"` 可发送内容为 abc def 的消息
+- 执行命令 `go-send-cli -file path/to/abc.jpg` 可发送名为 abc.jpg 的文件
+- 执行命令 `go-send-cli -clip "abc def"` 可发送内容为 abc def 的消息到云剪贴板
+- 注意,  -clip -text -file 这三个功能原则上不可同时使用，若同时使用，只有其中一个功能生效。
 
 
 ## demo 演示

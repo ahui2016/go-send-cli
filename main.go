@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ahui2016/goutil"
 )
@@ -27,6 +28,7 @@ var (
 )
 
 var (
+	clip = flag.String("clip", "", "send the text in the clipboard")
 	file = flag.String("file", "", "send a file")
 	text = flag.String("text", "", "insert a text message")
 	pass = flag.String("pass", "", "set password, cannot use empty password")
@@ -54,16 +56,21 @@ func init() {
 
 func main() {
 
-	// 如果提供了文件，就发送文件。
-	// -file 与 -text 不可同时使用，这在 checkFlagsCombination 中进行检查。
-	if *file != "" {
-		sendFile(*file)
+	// 有 -clip 参数，就优先发送文本消息至云剪贴板，并且忽略其他参数。
+	if *clip != "" {
+		sendTextMsg("/api/add-clip", *clip)
 		return
 	}
 
-	// 有 -text 参数，就发送文本备忘。
+	// 有 -text 参数，就发送文本备忘，并且忽略 -file 参数。
 	if *text != "" {
-		sendTextMsg(*text)
+		sendTextMsg("/api/add-text", *text)
+		return
+	}
+
+	// 如果提供了文件，就发送文件。但如果同时有 -clip 或 -text, 则 -file 会被忽略。
+	if *file != "" {
+		sendFile(*file)
 		return
 	}
 
@@ -75,14 +82,8 @@ func main() {
 
 // checkFlagsCombination 检查命令参数的组合有无问题
 func checkFlagsCombination() {
-	if (*pass+*addr != "") && *text != "" {
-		log.Fatal("Cannot use -text with -pass or -addr 设置密码和网址的功能与收发消息功能不可同时使用")
-	}
-	if (*pass+*addr != "") && *file != "" {
-		log.Fatal("Cannot use -file with -pass or -addr 设置密码和网址的功能与收发文件功能不可同时使用")
-	}
-	if *text != "" && *file != "" {
-		log.Fatal("Cannot use -text and -file at the same time 发送文本与发送文件功能不可同时使用")
+	if (*pass+*addr != "") && (*text+*file+*clip != "") {
+		log.Fatal("Cannot use -pass and -addr with other commands 设置密码和网址的功能与收发消息功能不可同时使用")
 	}
 }
 
@@ -171,17 +172,17 @@ func getLastText() string {
 	return body
 }
 
-func sendTextMsg(textMsg string) {
+func sendTextMsg(path, textMsg string) {
 	data := url.Values{}
 	data.Set("password", config.Password)
-	data.Set("text-msg", textMsg)
+	data.Set("text-msg", strings.TrimSpace(textMsg))
 
-	res, err := http.PostForm(config.Address+"/api/add-text", data)
+	res, err := http.PostForm(config.Address+path, data)
 	goutil.CheckErrorFatal(err)
 
 	body := getResponseBody(res)
 	if res.StatusCode != 200 {
-		log.Fatal(res.StatusCode, string(body))
+		log.Fatal(res.StatusCode, " | ", string(body))
 	}
 }
 
