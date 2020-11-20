@@ -69,7 +69,7 @@ func main() {
 
 	// 默认（未输入任何参数）状态下获取最近一条文本消息
 	textMsg := getLastText()
-	_, err := fmt.Fprint(os.Stdout, textMsg)
+	_, err := fmt.Fprintln(os.Stdout, textMsg)
 	goutil.CheckErrorFatal(err)
 }
 
