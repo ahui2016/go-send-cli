@@ -58,13 +58,13 @@ func main() {
 
 	// 有 -clip 参数，就优先发送文本消息至云剪贴板，并且忽略其他参数。
 	if *clip != "" {
-		sendTextMsg("/api/add-clip", *clip)
+		sendTextMsg("/cli/add-clip", *clip)
 		return
 	}
 
 	// 有 -text 参数，就发送文本备忘，并且忽略 -file 参数。
 	if *text != "" {
-		sendTextMsg("/api/add-text", *text)
+		sendTextMsg("/cli/add-text", *text)
 		return
 	}
 
@@ -162,7 +162,7 @@ func getLastText() string {
 	data := url.Values{}
 	data.Set("password", config.Password)
 
-	res, err := http.PostForm(config.Address+"/api/last-text", data)
+	res, err := http.PostForm(config.Address+"/cli/last-text", data)
 	goutil.CheckErrorFatal(err)
 
 	body := string(getResponseBody(res))
@@ -189,7 +189,7 @@ func sendTextMsg(path, textMsg string) {
 func sendFile(file string) {
 	formData, contentType, err1 := newMultipartForm(file)
 	res, err2 := http.Post(
-		config.Address+"/api/add-photo", contentType, formData)
+		config.Address+"/cli/add-photo", contentType, formData)
 	goutil.CheckErrorFatal(goutil.WrapErrors(err1, err2))
 
 	body := getResponseBody(res)
